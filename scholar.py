@@ -722,6 +722,7 @@ class SearchScholarQuery(ScholarQuery):
         + '&as_sdt=%(patents)s%%2C5' \
         + '&as_vis=%(citations)s' \
         + '&btnG=&hl=en' \
+        + '&cites=%(cites_id)s' \
         + '&num=%(num)s'
 
     def __init__(self):
@@ -737,6 +738,7 @@ class SearchScholarQuery(ScholarQuery):
         self.timeframe = [None, None]
         self.include_patents = True
         self.include_citations = True
+        self.cites = None
 
     def set_words(self, words):
         """Sets words that *all* must be found in the result."""
@@ -779,6 +781,13 @@ class SearchScholarQuery(ScholarQuery):
         if end:
             end = ScholarUtils.ensure_int(end)
         self.timeframe = [start, end]
+    
+    def set_cites_id(self, cluster):
+        """
+        Sets a cluster ID that must be cited by results.
+        """
+        msg = 'cluster ID must be numeric'
+        self.cites = ScholarUtils.ensure_int(cluster, msg) 
 
     def set_include_citations(self, yesorno):
         self.include_citations = yesorno
@@ -790,7 +799,8 @@ class SearchScholarQuery(ScholarQuery):
         if self.words is None and self.words_some is None \
            and self.words_none is None and self.phrase is None \
            and self.author is None and self.pub is None \
-           and self.timeframe[0] is None and self.timeframe[1] is None:
+           and self.timeframe[0] is None and self.timeframe[1] is None \
+           and self.cites is None:
             raise QueryArgumentError('search query needs more parameters')
 
         # If we have some-words or none-words lists, we need to
@@ -817,12 +827,16 @@ class SearchScholarQuery(ScholarQuery):
                    'yhi': self.timeframe[1] or '',
                    'patents': '0' if self.include_patents else '1',
                    'citations': '0' if self.include_citations else '1',
+                   'cites_id' : self.cites or '',
                    'num': self.num_results or ScholarConf.MAX_PAGE_RESULTS}
 
         for key, val in urlargs.items():
             urlargs[key] = quote(encode(val))
 
-        return self.SCHOLAR_QUERY_URL % urlargs
+        if self.cites is None:
+            return self.SCHOLAR_QUERY_URL % urlargs
+        else:
+            return (self.SCHOLAR_QUERY_URL % urlargs) + "&scipsc=1" 
 
 
 class ScholarSettings(object):
@@ -1151,6 +1165,8 @@ scholar.py -c 5 -a "albert einstein" -t --none "quantum theory" --after 1970"""
                      help='Do not include citations in results')
     group.add_option('-C', '--cluster-id', metavar='CLUSTER_ID', default=None,
                      help='Do not search, just use articles in given cluster ID')
+    group.add_option('--cites', metavar='CLUSTER_ID', default=None,
+                     help='Searches all articles that cite a given cluster ID')
     group.add_option('-c', '--count', type='int', default=None,
                      help='Maximum number of results')
     parser.add_option_group(group)
@@ -1202,8 +1218,8 @@ scholar.py -c 5 -a "albert einstein" -t --none "quantum theory" --after 1970"""
     if options.cluster_id is not None:
         if options.author or options.allw or options.some or options.none \
            or options.phrase or options.title_only or options.pub \
-           or options.after or options.before:
-            print('Cluster ID queries do not allow additional search arguments.')
+           or options.after or options.before or options.cites:
+            print 'Cluster ID queries do not allow additional search arguments.'
             return 1
 
     querier = ScholarQuerier()
@@ -1247,6 +1263,8 @@ scholar.py -c 5 -a "albert einstein" -t --none "quantum theory" --after 1970"""
             query.set_include_patents(False)
         if options.no_citations:
             query.set_include_citations(False)
+        if options.cites:
+            query.set_cites_id(options.cites)
 
     if options.count is not None:
         options.count = min(options.count, ScholarConf.MAX_PAGE_RESULTS)
